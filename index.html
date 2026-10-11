@@ -12,14 +12,11 @@ body{margin:0;padding:16px;background:var(--bg);color:var(--fg);font:15px/1.45 s
 h1{font-size:1.5rem;margin:4px 0 2px;letter-spacing:-.01em}
 h3{font-size:.95rem;margin:16px 0 6px}
 .sub,.hint,.meta,.note{color:var(--mute);font-size:.82rem;margin:0 0 12px}
-.card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px;margin-bottom:12px}
 label{display:block;font-size:.85rem;margin-bottom:6px}
 input,select,button{font:inherit;color:inherit}
-input,select{width:100%;min-width:0;padding:10px;border:1px solid var(--line);border-radius:8px;background:var(--bg)}
+select{width:100%;min-width:0;padding:10px;border:1px solid var(--line);border-radius:8px;background:var(--bg)}
 button{padding:10px 14px;border:0;border-radius:8px;background:var(--acc);color:var(--accfg);font-weight:600;cursor:pointer}
-button.ghost{background:transparent;color:var(--fg);border:1px solid var(--line);font-weight:500}
-.row{display:flex;gap:8px}
-.bar{display:flex;gap:8px;margin-bottom:10px}
+.bar{margin-bottom:10px}
 .tabs{display:flex;border-bottom:1px solid var(--line);margin-bottom:12px}
 .tabs button{flex:1;background:none;color:var(--mute);border-radius:0;border-bottom:2px solid transparent;padding:10px 4px}
 .tabs button.on{color:var(--fg);border-bottom-color:var(--acc)}
@@ -60,14 +57,8 @@ ul.list li{display:flex;justify-content:space-between;gap:8px;padding:8px 0;bord
 <h1>Maç Analiz</h1>
 <p class="sub">Takım istatistikleri. Sonuç tahmini yapmaz.</p>
 
-<section id="keybox" class="card" hidden>
-  <label for="tok">football-data.org API anahtarı</label>
-  <div class="row"><input id="tok" type="password" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Anahtarı buraya yapıştır"><button id="savetok">Kaydet</button></div>
-  <p class="hint" style="margin-top:8px">Anahtar sadece bu telefonun tarayıcısında saklanır.</p>
-</section>
-
-<div id="app" hidden>
-  <div class="bar"><select id="league" aria-label="Lig"></select><button id="keybtn" class="ghost">Anahtar</button></div>
+<div id="app">
+  <div class="bar"><select id="league" aria-label="Lig"></select></div>
   <nav class="tabs">
     <button data-tab="table" class="on">Puan durumu</button>
     <button data-tab="team">Takım</button>
@@ -81,32 +72,32 @@ ul.list li{display:flex;justify-content:space-between;gap:8px;padding:8px 0;bord
 
 <script>
 (()=>{
-const API='https://api.football-data.org/v4';
 const LEAGUES=[['PL','Premier Lig'],['BL1','Bundesliga'],['SA','Serie A'],['PD','La Liga'],['FL1','Ligue 1'],['DED','Hollanda Eredivisie'],['CL','Şampiyonlar Ligi']];
+const RAW='https://raw.githubusercontent.com/Selcuk1625/mac-analiz/main/';
 const $=s=>document.querySelector(s);
 const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const ls={get:k=>{try{return localStorage.getItem(k)}catch(e){return null}},set:(k,v)=>{try{localStorage.setItem(k,v)}catch(e){}}};
-const S={token:ls.get('mac_token')||'',code:ls.get('mac_league')||'PL',data:null,tab:'table',team:null,a:null,b:null};
+const S={code:ls.get('mac_league')||'PL',data:null,tab:'table',team:null,a:null,b:null};
 const f2=n=>(Math.round(n*100)/100).toFixed(2).replace('.',',');
 const fd=d=>new Date(d).toLocaleDateString('tr-TR',{day:'numeric',month:'short'});
 
 function msg(t){const m=$('#msg');m.hidden=!t;m.textContent=t||''}
 
-async function api(path){
-  let res;
-  try{res=await fetch(API+path,{headers:{'X-Auth-Token':S.token}})}
-  catch(e){throw new Error('Bağlantı kurulamadı. İnternetini kontrol et. Sorun sürerse tarayıcı bu siteye doğrudan bağlanmayı engelliyor olabilir.')}
-  if(res.status===429)throw new Error('Dakikada 10 istek sınırı doldu. Bir dakika bekleyip tekrar dene.');
-  if(res.status===403)throw new Error('Bu lig ücretsiz planında yok ya da anahtar hatalı.');
-  if(res.status===400||res.status===401)throw new Error('Anahtar geçersiz görünüyor. "Anahtar" düğmesinden yeniden gir.');
-  if(!res.ok)throw new Error('Sunucu hata verdi ('+res.status+').');
-  return res.json();
+async function getText(name){
+  const q='?t='+Math.floor(Date.now()/60000);
+  for(const base of ['',RAW]){
+    try{const r=await fetch(base+'data/'+name+q,{cache:'no-cache'});if(r.ok)return await r.text()}catch(e){}
+  }
+  return null;
+}
+async function getJson(name){
+  const t=await getText(name);
+  if(t){try{return JSON.parse(t)}catch(e){}}
+  throw new Error("Bu ligin verisi henüz hazır değil. GitHub'da Actions sekmesinden 'Veri güncelle' işini bir kez çalıştır.");
 }
 
 async function loadLeague(code){
-  const key='mac_cache_'+code;
-  try{const c=JSON.parse(ls.get(key)||'null');if(c&&Date.now()-c.t<15*60*1000)return c}catch(e){}
-  const [st,mt]=await Promise.all([api('/competitions/'+code+'/standings'),api('/competitions/'+code+'/matches')]);
+  const [st,mt,up]=await Promise.all([getJson(code+'-standings.json'),getJson(code+'-matches.json'),getText('guncelleme.txt')]);
   const info={};
   const groups=(st.standings||[]).filter(s=>s.type==='TOTAL').map(s=>({group:s.group,rows:s.table.map(r=>{
     info[r.team.id]={n:r.team.shortName||r.team.name,c:r.team.crest};
@@ -118,9 +109,9 @@ async function loadLeague(code){
   });
   const se=st.season||{};
   const season=se.startDate?se.startDate.slice(0,4)+'/'+(se.endDate||'').slice(2,4):'';
-  const out={t:Date.now(),groups,m,info,season,md:se.currentMatchday};
-  ls.set(key,JSON.stringify(out));
-  return out;
+  let upd='';
+  if(up){const dt=new Date(up.trim());if(!isNaN(dt))upd=dt.toLocaleString('tr-TR',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'})}
+  return{groups,m,info,season,md:se.currentMatchday,upd};
 }
 
 const ids=()=>S.data?S.data.groups.flatMap(g=>g.rows.map(r=>r.id)):[];
@@ -148,7 +139,7 @@ const teamSel=(idn,cur)=>'<select id="'+idn+'">'+ids().map(i=>'<option value="'+
 function rTable(){
   const el=$('#v-table'),d=S.data;
   if(!d){el.innerHTML='';return}
-  el.innerHTML='<p class="meta">Sezon '+esc(d.season)+(d.md?' · '+d.md+'. hafta':'')+'</p>'+d.groups.map(g=>
+  el.innerHTML='<p class="meta">Sezon '+esc(d.season)+(d.md?' · '+d.md+'. hafta':'')+(d.upd?' · Veri: '+esc(d.upd):'')+'</p>'+d.groups.map(g=>
     (g.group?'<h3>'+esc(String(g.group).replace(/_/g,' '))+'</h3>':'')+
     '<div class="scroll"><table><thead><tr><th>#</th><th class="tn">Takım</th><th>O</th><th>G</th><th>B</th><th>M</th><th>Gol</th><th>Av</th><th>P</th></tr></thead><tbody>'+
     g.rows.map(r=>'<tr data-id="'+r.id+'"><td>'+r.p+'</td><td class="tn">'+crest(r.id)+esc(nm(r.id))+'</td><td>'+r.pg+'</td><td>'+r.w+'</td><td>'+r.d+'</td><td>'+r.l+'</td><td>'+r.gf+':'+r.ga+'</td><td>'+(r.gd>0?'+':'')+r.gd+'</td><td><b>'+r.pts+'</b></td></tr>').join('')+
@@ -221,18 +212,10 @@ async function go(){
   rTable();tab(S.tab);
 }
 
-function show(){
-  const has=!!S.token;
-  $('#keybox').hidden=has;$('#app').hidden=!has;
-  if(has)go();
-}
-
 $('#league').innerHTML=LEAGUES.map(l=>'<option value="'+l[0]+'"'+(l[0]===S.code?' selected':'')+'>'+l[1]+'</option>').join('');
 $('#league').onchange=e=>{S.code=e.target.value;ls.set('mac_league',S.code);go()};
-$('#savetok').onclick=()=>{const v=$('#tok').value.trim();if(!v)return;S.token=v;ls.set('mac_token',v);show()};
-$('#keybtn').onclick=()=>{$('#tok').value='';$('#keybox').hidden=false;$('#tok').focus()};
 document.querySelectorAll('.tabs button').forEach(b=>b.onclick=()=>tab(b.dataset.tab));
-show();
+go();
 })();
 </script>
 </body>
